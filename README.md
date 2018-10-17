@@ -18,3 +18,5 @@
  * 执行 php download.php
  *
  */
+</pre>
+<img src="https://github.com/QiangMouRen/foreach_download_api_images/raw/master/images/shell.png" />
