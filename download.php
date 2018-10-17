@@ -29,26 +29,22 @@ $api = 'http://api.5xbl.cn/api/api.php'; // 测试接口地址
 $refer = "https://www.baidu.cpm/";
 if (!is_dir($imagePath))
     mkdir($imagePath);
-
+echo "开始对[{$api}]的图片进行下载" . PHP_EOL;
 $succCount = 0;
 for (;;) { // 在对美图的渴望中循环
     
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $api);
-    curl_setopt($ch, CURLOPT_VERBOSE, true);
-    curl_setopt($ch, CURLOPT_HEADER, true);
+    curl_setopt($ch, CURLOPT_HEADER, 0);
     curl_setopt($ch, CURLOPT_NOBODY, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 20);
     curl_setopt($ch, CURLOPT_REFERER, $refer);
-    curl_setopt($ch, CURLOPT_AUTOREFERER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
     $ret = curl_exec($ch);
     $info = curl_getinfo($ch);
-    $imgurl = $info['url'];
+    $imgurl = $info['redirect_url'];
     curl_close($ch);
     if (is_array($imgurl)) { // 部分情况出现为数组
         $imgurl = end($imgurl);
@@ -77,12 +73,13 @@ for (;;) { // 在对美图的渴望中循环
         curl_setopt($ch, CURLOPT_URL, $imgurl);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+        $imgInfo = curl_getinfo($ch);
         $file = curl_exec($ch);
         curl_close($ch);
         $resource = fopen($imagePath . $fileName, 'a');
         fwrite($resource, $file);
         fclose($resource);
-        echo "下载成功：{$imgurl}" . PHP_EOL;
+        echo "下载成功：{$imgurl} " . round(filesize($imagePath . $fileName) / 1048576 * 100) / 100 . ' MB' . PHP_EOL;
         
         $cacheData[$fileName] = array(
             "url" => $imgurl,
@@ -99,4 +96,3 @@ for (;;) { // 在对美图的渴望中循环
     }
     file_put_contents('cache.json', json_encode($cacheData, 1));
 }
-
