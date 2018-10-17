@@ -1,22 +1,23 @@
 # 下载随机图片接口的图片<br />
 <br />
-<br />
-/*<br />
- * 死循环下载接口图片<br />
- * Author QiangGe<br />
- * Mail 2962051004@qq.com<br />
- * 在某个夜晚，我正在聊QQ，某个人在群里发了一个网站，背景是一张找了很久的图片，然而，劳资用的是手机，而且在QQ中打开，并保存不了，重新打开图已不见，流下了没技术的眼泪。然而夜生活才刚刚开始。<br />
- * 在死循环的边缘试探。死循环请求接口，取得location，获取文件名，判断是否有下载，如果循环中频繁取得同一张图片地址大于设置值，可以判断是否已将人家接口榨干。<br />
+
+
+ 死循环下载接口图片<br />
+Author QiangGe<br />
+Mail 2962051004@qq.com<br />
+##起因
+在某个夜晚，我正在聊QQ，某个人在群里发了一个网站，背景是一张找了很久的图片，然而，劳资用的是手机，而且在QQ中打开，并保存不了，重新打开图已不见，流下了没技术的眼泪。然而夜生活才刚刚开始。<br />
+在死循环的边缘试探。死循环请求接口，取得location，获取文件名，判断是否有下载，如果循环中频繁取得同一张图片地址大于设置值，可以判断是否已将人家接口榨干。<br />
+##适用
  * 仅适用于直接跳转的随机图片接口。比如一个数组弄一堆上传到新浪图床的地址，然后随机取出跳转。<br />
  * 他们的接口十分神秘，但你又想得到所有图片。我非常不建议做这种消耗人家资源的不人道行为 滑稽<br />
  * 出现任何问题请不要联系我 (一脸安详.jpg)<br />
  */<br />
 <br />
 <br />
-/*<br />
- * 请在shell命令行下执行此文件<br />
- *<br />
- * 执行 php download.php<br />
- * <img src="https://github.com/QiangMouRen/foreach_download_api_images/raw/master/images/shell.png" /><br />
- */<br />
 <br />
+请在shell命令行下执行此文件<br />
+执行<pre> php download.php </pre><br />
+
+
+<img src="https://github.com/QiangMouRen/foreach_download_api_images/raw/master/images/shell.png" />
