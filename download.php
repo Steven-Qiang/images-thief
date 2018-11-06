@@ -1,22 +1,12 @@
 <?php
-/*
- * 死循环下载接口图片
- * Author QiangGe
- * Mail 2962051004@qq.com
- * 在某个夜晚，我正在聊QQ，某个人在群里发了一个网站，背景是一张找了很久的图片，然而，劳资用的是手机，而且在QQ中打开，并保存不了，重新打开图已不见，流下了没技术的眼泪。然而夜生活才刚刚开始。
- * 在死循环的边缘试探。死循环请求接口，取得location，获取文件名，判断是否有下载，如果循环中频繁取得同一张图片地址大于设置值，可以判断是否已将人家接口榨干。
- * 仅适用于直接跳转的随机图片接口。比如一个数组弄一堆上传到新浪图床的地址，然后随机取出跳转。
- * 他们的接口十分神秘，但你又想得到所有图片。我非常不建议做这种消耗人家资源的不人道行为 \滑稽
- * 出现任何问题请不要联系我 (一脸安详.jpg)
- */
-
 
 /*
- * 请在shell命令行下执行此文件
- *
- * 执行 php download.php
- *
- */
+* 死循环下载接口图片
+* @author QangMouRen<2962051004@qq.com>
+* @github https://github.com/QiangMouRen/foreach_download_api_images
+* @version 1.0
+*/
+
 set_time_limit(0);
 
 if (!is_file('cache.json'))
@@ -26,7 +16,8 @@ $cacheData = json_decode(file_get_contents('cache.json'), 1);
 $repeatMax = 3; // 单张图片重复最大次数 超过即停止循环
 $imagePath = './images/'; // 图片存档目录
 $api = 'http://api.5xbl.cn/api/api.php'; // 测试接口地址
-$refer = "https://www.baidu.cpm/";
+$refer = "https://www.baidu.cpm/"; // 来源
+
 if (!is_dir($imagePath))
     mkdir($imagePath);
 echo "开始对[{$api}]的图片进行下载" . PHP_EOL;
