@@ -20,10 +20,10 @@
 请在cmd或shell 执行此命令
 
 ```shell
-git clone https://github.com/QiangMouRen/foreach_download_api_images
+git clone https://github.com/QiangMouRen/download_all_images_of_api
 # 如果未安装git 请执行 yum install git -y
-cd foreach_download_api_images
+cd download_all_images_of_api
 php download.php
 ```
 
-![aa](https://github.com/QiangMouRen/foreach_download_api_images/raw/master/images/shell.png)
+![aa](https://github.com/QiangMouRen/download_all_images_of_api/raw/master/images/shell.png)
