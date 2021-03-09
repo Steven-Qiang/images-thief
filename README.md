@@ -26,4 +26,4 @@ cd download_all_images_of_api
 php download.php
 ```
 
-![aa](https://imgtu.com/i/63NK5q)
+![aa](https://i.loli.net/2021/03/09/iV7FBmxfJ6ohvz4.png)
