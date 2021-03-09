@@ -26,4 +26,4 @@ cd download_all_images_of_api
 php download.php
 ```
 
-![aa](https://github.com/qiangmouren/download-api-images/raw/master/images/shell.png)
+![aa](https://imgtu.com/i/63NK5q)
