@@ -1,29 +1,41 @@
-# 下载随机图片接口的图片
+# fetch-all-pictures
 
+批量下载随机图片接口的所有图片
 
-## 起因
+# 目的
 
-在某个夜晚，我正在聊QQ，某个人在群里发了一个网站，背景是一张找了很久的图片，然而，劳资用的是手机，而且在QQ中打开，并保存不了，重新打开图已不见，流下了没技术的眼泪。然而夜生活才刚刚开始。
+网络上出现一些随机图片接口，请求后随机跳转至图片地址。
 
-在死循环的边缘试探。死循环请求接口，取得location，获取文件名，判断是否有下载，如果循环中频繁取得同一张图片地址大于设置值，可以判断是否已将人家接口榨干。
-## 说明
+本工具的目的为了批量下载这些随机图片接口的所有图片。
 
-仅适用于直接跳转的随机图片接口。比如一个数组弄一堆上传到新浪图床的地址，然后随机取出跳转。
+# 使用
 
-他们的接口十分神秘，但你又想得到所有图片。我非常不建议做这种消耗人家资源的不人道行为 滑稽
+目前只有windows 32位版本。 
 
-出现任何问题请不要联系我 
+下载 releases https://github.com/qiangmouren/fetch-all-pictures/releases
 
-环境：php>7.0 php-cli
+程序支持并发下载。如速度较慢可以适当调整并发数量。
 
-## 使用
-请在cmd或shell 执行此命令
+最大出现次数设置：因为接口可能已经被榨干了。返回了重复图片次数超过设置阈值，则停止程序。`设置为0则无视。`
 
-```shell
-git clone https://github.com/qiangmouren/download-api-images
-# 如果未安装git 请执行 yum install git -y
-cd download_all_images_of_api
-php download.php
-```
+程序支持将结果导出至csv文件。
 
-![aa](https://i.loli.net/2021/03/09/iV7FBmxfJ6ohvz4.png)
+# 软件截图
+
+![image.png](https://i.loli.net/2021/09/24/zE7Pp8oRkgKUI16.png)
+
+![image.png](https://i.loli.net/2021/09/24/UZKreGy1u35HXzf.png)
+
+---
+
+# BUG
+
+请提交 issue
+
+联系邮箱 admin@qiangmou.ren
+
+# 支持
+
+个人主页 https://qiangmou.ren/
+
+捐赠 https://qiangmou.ren/donate
