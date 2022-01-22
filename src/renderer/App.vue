@@ -77,7 +77,7 @@
     </main>
     <a-layout-footer>
       ©{{new Date().getFullYear()}} <a @click="shell.openExternal('https://qiangmou.ren')">强某人</a> |
-      <a @click="shell.openExternal('https://github.com/qiangmouren/fetch-all-pictures')">https://github.com/qiangmouren/fetch-all-pictures</a>
+      <a @click="shell.openExternal('https://github.com/qiangmouren/images-thief')">https://github.com/qiangmouren/images-thief</a>
     </a-layout-footer>
 
   </div>
