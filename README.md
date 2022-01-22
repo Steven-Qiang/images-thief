@@ -1,4 +1,4 @@
-# fetch-all-pictures
+# images-thief
 
 批量下载随机图片接口的所有图片
 
@@ -12,7 +12,7 @@
 
 目前只有windows 32位版本。 
 
-下载 releases https://github.com/qiangmouren/fetch-all-pictures/releases
+下载 releases https://github.com/qiangmouren/images-thief/releases
 
 程序支持并发下载。如速度较慢可以适当调整并发数量。
 
