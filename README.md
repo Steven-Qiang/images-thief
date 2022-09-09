@@ -1,4 +1,4 @@
-# images-thief
+# Images Thief
 
 批量下载随机图片接口的所有图片
 
@@ -10,7 +10,7 @@
 
 # 使用
 
-目前只有windows 32位版本。 
+目前只有 windows 版本。
 
 下载 releases https://github.com/qiangmouren/images-thief/releases
 
@@ -18,13 +18,11 @@
 
 最大出现次数设置：因为接口可能已经被榨干了。返回了重复图片次数超过设置阈值，则停止程序。`设置为0则无视。`
 
-程序支持将结果导出至csv文件。
+程序支持将结果导出至 csv 文件。
 
 # 软件截图
 
-![image.png](https://i.loli.net/2021/09/24/zE7Pp8oRkgKUI16.png)
-
-![image.png](https://i.loli.net/2021/09/24/UZKreGy1u35HXzf.png)
+![](https://s3.bmp.ovh/imgs/2022/09/09/f87dc99aa3117ca9.png)
 
 ---
 
