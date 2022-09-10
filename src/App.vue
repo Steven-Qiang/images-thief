@@ -1,6 +1,13 @@
 <template>
   <h2 style="margin-left: 50px">Images Thief 图片小偷</h2>
-  <h5 style="margin-left: 63px">批量下载随机图片接口的所有图片</h5>
+  <h5 style="margin-left: 63px">
+    <span style="vertical-align: middle">批量下载随机图片接口的所有图片</span>
+    <img
+      src="https://visitor-badge.glitch.me/badge?page_id=images-thief"
+      loading="lazy"
+      style="vertical-align: middle; margin-left: 10px"
+    />
+  </h5>
   <el-form ref="formRef" :model="form" :rules="rules" label-width="130px" :size="formSize" status-icon>
     <el-form-item label="接口地址" prop="apiUrl">
       <el-input v-model="form.apiUrl" style="max-width: 500px" />
@@ -15,7 +22,7 @@
       />
     </el-form-item>
     <el-form-item label="更多选项">
-      <el-checkbox-group v-model="form.options">
+      <el-checkbox-group v-model="form.options" :disabled="running">
         <el-tooltip class="box-item" effect="dark" content="部分接口可能限制了来源地址。" placement="top">
           <el-checkbox label="setRefererUrl">来源地址</el-checkbox>
         </el-tooltip>
@@ -65,10 +72,10 @@
     </el-form-item>
     <div style="display: flex">
       <el-form-item label="并发数" v-if="isSetConcurrency" prop="rawOptions.concurrency">
-        <el-input-number v-model="form.rawOptions.concurrency" style="width: 120px" :min="1" />
+        <el-input-number v-model="form.rawOptions.concurrency" style="width: 150px" :min="1" />
       </el-form-item>
       <el-form-item label="设置阈值" v-if="isSetMaxDuplicate" prop="rawOptions.maxDuplicate">
-        <el-input-number v-model="form.rawOptions.maxDuplicate" style="width: 120px" :min="0" />
+        <el-input-number v-model="form.rawOptions.maxDuplicate" style="width: 150px" :min="0" />
       </el-form-item>
     </div>
     <el-form-item label="来源地址" v-if="isSetRefererUrl" prop="rawOptions.refererUrl">
@@ -78,6 +85,10 @@
       <el-button :type="running ? 'danger' : 'primary'" @click="tapButton(formRef)">{{ btnText }}</el-button>
       <el-button type="warning" v-if="tableData.length" :disabled="running" @click="tapReset">重置列表</el-button>
       <el-button type="info" v-if="tableData.length" :disabled="running" @click="tapExportCsv">导出列表</el-button>
+      <div style="margin-left: 20px">
+        发现数量：{{ tableData.length }}， 已下载：{{ tableData.filter((x) => x.status == 'success').length }}，
+        失败：{{ tableData.filter((x) => x.status == 'exception').length }}， 总耗时：{{ time }}秒
+      </div>
     </el-form-item>
   </el-form>
   <div class="table">
@@ -85,14 +96,17 @@
       ref="tableRef"
       row-key="url"
       :data="tableData"
-      border
+      :border="true"
       :style="{ width: '90%', margin: 'auto' }"
-      :default-sort="{ prop: 'duplicate', order: 'ascending' }"
+      :default-sort="{ prop: 'duplicate', order: 'descending' }"
     >
       <el-table-column prop="url" label="图片地址" sortable />
       <el-table-column prop="filename" label="文件名" sortable>
         <template #default="scope">
-          <a href="#" @click="openInExplorer(scope.row.filename)">{{ scope.row.filename }}</a>
+          <a href="#" @click="openInExplorer(scope.row.filename)" v-if="!form.rawOptions.noDownload">{{
+            scope.row.filename
+          }}</a>
+          <span v-else>{{ scope.row.filename }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="size" label="文件大小" width="180" v-if="!form.rawOptions.noDownload" sortable>
@@ -100,7 +114,12 @@
           <span>{{ prettyBytes(scope.row.size) }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="duplicate" label="出现次数" width="180" sortable />
+      <el-table-column prop="duplicate" label="重复" width="100" sortable>
+        <template #default="scope">
+          <span>{{ scope.row.duplicate }}次</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="msg" label="信息" sortable />
       <el-table-column fixed="right" prop="progress" label="进度" width="180" v-if="!form.rawOptions.noDownload">
         <template #default="scope">
           <el-progress :percentage="scope.row.progress" :status="scope.row.status" />
@@ -138,18 +157,20 @@ interface Row {
   filename: string;
   progress: number;
   status: 'exception' | 'success' | '';
+  msg: string;
 }
 
 const tableRef = ref<InstanceType<typeof ElTable>>();
 const tableData = ref<Row[]>([]);
 
+let time = ref(0);
 let btnText = ref('开始');
 let running = ref<boolean>(false);
 
 const formSize = ref('default');
 const formRef = ref<FormInstance>();
 const form = reactive({
-  apiUrl: '', //'https://api.btstu.cn/sjbz/api.php?lx=dongman',
+  apiUrl: 'https://api.btstu.cn/sjbz/api.php?lx=dongman',
   outputDir: '',
   options: ['setConcurrency', 'setRefererUrl'] as string[],
   rawOptions: {
@@ -210,9 +231,14 @@ const isSetMaxDuplicate = computed(() => form.options.includes('setMaxDuplicate'
 const isSetNoDownload = computed(() => form.options.includes('setNoDownload'));
 const isSetConcurrency = computed(() => form.options.includes('setConcurrency'));
 
+let timer: number | null;
 let queue: Queue | null;
 const stop = async () => {
   btnText.value = '停止中...';
+  if (timer) {
+    clearTimeout(timer);
+    timer = null;
+  }
   if (queue) {
     queue.pause();
     queue.clear();
@@ -222,6 +248,10 @@ const stop = async () => {
   btnText.value = '开始';
 };
 const start = async () => {
+  time.value = 0;
+  timer = setInterval(() => {
+    time.value++;
+  }, 1000);
   running.value = true;
   btnText.value = '停止';
   const concurrency = parseInt(form.rawOptions.concurrency.toString());
@@ -263,6 +293,7 @@ const start = async () => {
         let duplicate = 1;
         if (index == -1) {
           tableData.value.push({
+            msg: '预备中',
             url: imgUrl,
             size: 0,
             duplicate,
@@ -295,12 +326,19 @@ const start = async () => {
             ret = JSON.parse(ret);
             if (ret.ok) {
               set({
-                filename: ret.filename,
-                size: ret.size,
+                filename: ret.filename || filename,
+                size: ret.size || 0,
                 progress: 100,
                 status: 'success',
+                msg: ret.msg,
               });
-            } else throw null;
+            } else {
+              set({
+                status: 'exception',
+                progress: 0,
+                msg: ret.msg,
+              });
+            }
           } catch {
             set({
               status: 'exception',

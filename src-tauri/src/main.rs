@@ -4,7 +4,7 @@
 )]
 
 use reqwest::header::HeaderMap;
-use std::io::Write;
+use std::{io::Write, path::Path};
 
 const USER_AGENT:&str="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36";
 
@@ -37,6 +37,19 @@ async fn fetch(api_url: &str, ref_url: &str) -> Result<String, String> {
     }
 }
 
+#[derive(serde::Serialize)]
+struct Resp {
+    ok: bool,
+    size: u64,
+    filename: String,
+    msg: String,
+}
+#[derive(serde::Serialize)]
+struct ErrResp {
+    ok: bool,
+    msg: String,
+}
+
 #[tauri::command(async)]
 async fn download(
     img_url: &str,
@@ -51,21 +64,43 @@ async fn download(
         .default_headers(headers)
         .build()
         .unwrap();
-    let response = client.get(img_url).send().await;
-    match response {
-        Ok(res) => {
-            let img = res.bytes().await.unwrap();
-            let mut file = std::fs::File::create(format!("{}/{}", output, filename)).unwrap();
-            file.write_all(&img).unwrap();
-            Ok(format!(
-                "{{\"ok\":true,\"size\":{},\"filename\":\"{}\"}}",
-                img.len(),
-                filename
-            ))
-        }
-        Err(e) => {
-            println!("Error: {}", e);
-            Ok(format!("{{\"ok\":false,\"error\":\"{}\"}}", e))
+    let p = format!("{}/{}", output, filename);
+    let path = Path::new(p.as_str());
+    if path.exists() {
+        let resp_json = serde_json::to_string(&Resp {
+            ok: true,
+            size: path.metadata().unwrap().len(),
+            filename: filename.to_string(),
+            msg: "文件已存在".to_string(),
+        })
+        .unwrap();
+        Ok(resp_json)
+    } else {
+        let response = client.get(img_url).send().await;
+        match response {
+            Ok(res) => {
+                let img = res.bytes().await.unwrap();
+                let mut file = std::fs::File::create(path).unwrap();
+                file.write_all(&img).unwrap();
+
+                let resp_json = serde_json::to_string(&Resp {
+                    ok: true,
+                    size: img.len() as u64,
+                    filename: filename.to_string(),
+                    msg: "下载成功".to_string(),
+                })
+                .unwrap();
+                Ok(resp_json)
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+                let resp_json = serde_json::to_string(&ErrResp {
+                    ok: false,
+                    msg: e.to_string(),
+                })
+                .unwrap();
+                Ok(resp_json)
+            }
         }
     }
 }

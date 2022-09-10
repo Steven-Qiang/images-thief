@@ -1,4 +1,4 @@
-# Images Thief
+# Images Thief 3.0.1
 
 批量下载随机图片接口的所有图片
 
