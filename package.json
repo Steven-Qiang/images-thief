@@ -2,7 +2,7 @@
   "name": "images-thief",
   "description": "批量下载随机图片接口的所有图片",
   "private": true,
-  "version": "3.0.1",
+  "version": "3.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
