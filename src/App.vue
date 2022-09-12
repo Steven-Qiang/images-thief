@@ -160,17 +160,17 @@ interface Row {
   msg: string;
 }
 
+const isdev = import.meta.env.DEV;
 const tableRef = ref<InstanceType<typeof ElTable>>();
 const tableData = ref<Row[]>([]);
 
 let time = ref(0);
 let btnText = ref('开始');
 let running = ref<boolean>(false);
-
 const formSize = ref('default');
 const formRef = ref<FormInstance>();
 const form = reactive({
-  apiUrl: 'https://api.btstu.cn/sjbz/api.php?lx=dongman',
+  apiUrl: isdev ? 'https://api.btstu.cn/sjbz/api.php?lx=dongman' : '',
   outputDir: '',
   options: ['setConcurrency', 'setRefererUrl'] as string[],
   rawOptions: {
