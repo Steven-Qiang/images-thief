@@ -2,8 +2,8 @@ a {
   text-decoration: none;
 }
 
-.table {
-  min-height: 50vh;
+a:hover {
+  text-decoration: underline;
 }
 
 .footer {
@@ -16,4 +16,8 @@ a {
 
 .footer a {
   color: gray;
+}
+
+.el-pagination {
+  justify-content: flex-end;
 }

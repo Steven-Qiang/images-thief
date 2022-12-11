@@ -1,4 +1,4 @@
-# Images Thief 3.0.1
+# Images Thief 3.1.0
 
 批量下载随机图片接口的所有图片
 
@@ -22,7 +22,7 @@
 
 # 软件截图
 
-![](https://s3.bmp.ovh/imgs/2022/09/09/f87dc99aa3117ca9.png)
+![](https://s3.uuu.ovh/imgs/2022/12/12/f5fa856f75e3d437.png)
 
 ---
 

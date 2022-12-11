@@ -3,111 +3,116 @@
     windows_subsystem = "windows"
 )]
 
-use reqwest::header::HeaderMap;
-use std::{io::Write, path::Path};
+use std::io::Write;
+use std::path::Path;
 
-const USER_AGENT:&str="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36";
+use reqwest;
+mod util;
+
+use futures_util::StreamExt;
+use tauri::Runtime;
+use util::request::{get_file_name, get_file_size};
+use util::util::{create_client, url_join};
 
 #[tauri::command(async)]
-async fn fetch(api_url: &str, ref_url: &str) -> Result<String, String> {
-    let mut headers = HeaderMap::new();
-    headers.insert("Referer", ref_url.parse().unwrap());
-    headers.insert("User-Agent", USER_AGENT.parse().unwrap());
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .unwrap();
-    let response = client.get(api_url).send().await;
-    match response {
-        Ok(res) => {
-            let location = res.headers().get("location");
-            match location {
-                Some(loc) => {
-                    let loc_str = loc.to_str().unwrap();
-                    Ok(loc_str.to_string())
-                }
-                None => Err("No location header".to_string()),
-            }
-        }
-        Err(err) => {
-            println!("Error: {}", err);
-            Err(err.to_string())
-        }
+async fn get<R: Runtime>(
+    _app: tauri::AppHandle<R>,
+    _window: tauri::Window<R>,
+    url: String,
+    referer: String,
+) -> String {
+    println!("url: {}, referer: {}", url, referer);
+    let client = create_client();
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::REFERER,
+        reqwest::header::HeaderValue::from_str(&referer).unwrap(),
+    );
+    let res = client.get(&url).headers(headers).send().await.unwrap();
+    println!("StatusCode: {:?}", res.status());
+
+    if res.status() != reqwest::StatusCode::MOVED_PERMANENTLY
+        && res.status() != reqwest::StatusCode::FOUND
+    {
+        return "".to_string();
     }
-}
 
-#[derive(serde::Serialize)]
-struct Resp {
-    ok: bool,
-    size: u64,
-    filename: String,
-    msg: String,
-}
-#[derive(serde::Serialize)]
-struct ErrResp {
-    ok: bool,
-    msg: String,
-}
-
-#[tauri::command(async)]
-async fn download(
-    img_url: &str,
-    ref_url: &str,
-    filename: &str,
-    output: &str,
-) -> Result<String, String> {
-    let mut headers = HeaderMap::new();
-    headers.insert("Referer", ref_url.parse().unwrap());
-    headers.insert("User-Agent", USER_AGENT.parse().unwrap());
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
+    let redirect_url = res
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .unwrap()
+        .to_str()
         .unwrap();
-    let p = format!("{}/{}", output, filename);
-    let path = Path::new(p.as_str());
-    if path.exists() {
-        let resp_json = serde_json::to_string(&Resp {
-            ok: true,
-            size: path.metadata().unwrap().len(),
-            filename: filename.to_string(),
-            msg: "文件已存在".to_string(),
-        })
-        .unwrap();
-        Ok(resp_json)
+    println!("redirect_url: {}", redirect_url);
+    if redirect_url == "" {
+        return "".to_string();
+    }
+    let real_url: String;
+    if !redirect_url.starts_with("http") {
+        real_url = url_join(&url.as_str(), &redirect_url);
     } else {
-        let response = client.get(img_url).send().await;
-        match response {
-            Ok(res) => {
-                let img = res.bytes().await.unwrap();
-                let mut file = std::fs::File::create(path).unwrap();
-                file.write_all(&img).unwrap();
-
-                let resp_json = serde_json::to_string(&Resp {
-                    ok: true,
-                    size: img.len() as u64,
-                    filename: filename.to_string(),
-                    msg: "下载成功".to_string(),
-                })
-                .unwrap();
-                Ok(resp_json)
-            }
-            Err(e) => {
-                println!("Error: {}", e);
-                let resp_json = serde_json::to_string(&ErrResp {
-                    ok: false,
-                    msg: e.to_string(),
-                })
-                .unwrap();
-                Ok(resp_json)
-            }
-        }
+        real_url = redirect_url.to_string();
     }
+    println!("real_url: {}", real_url);
+    let size = get_file_size((*real_url).to_string()).await;
+    println!("size: {}", size);
+    let file_name = get_file_name((*real_url).to_string());
+    let json = format!(
+        r#"{{"url":"{}","size":"{}","filename":"{}"}}"#,
+        real_url, size, file_name
+    );
+    json.as_str().to_string()
+}
+
+#[tauri::command(async)]
+async fn download<R: Runtime>(
+    _app: tauri::AppHandle<R>,
+    window: tauri::Window<R>,
+    url: String,
+    referer: String,
+    filename: String,
+    size: String,
+    path: String,
+    unique_id: String,
+) -> String {
+    println!("url: {}, referer: {}", url, referer);
+    let client = create_client();
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::REFERER,
+        reqwest::header::HeaderValue::from_str(&referer).unwrap(),
+    );
+    let res = client.get(&url).headers(headers).send().await.unwrap();
+    println!("StatusCode: {:?}", res.status());
+
+    if res.status() != reqwest::StatusCode::OK {
+        return "".to_string();
+    }
+
+    let file_path = Path::new(&path).join(filename);
+    println!("file_path: {}", file_path.to_str().unwrap());
+    let mut file = std::fs::File::create(file_path).unwrap();
+    let mut stream = res.bytes_stream();
+    let mut total = 0;
+    while let Some(item) = stream.next().await {
+        let bytes = item.unwrap();
+        total += bytes.len();
+        file.write_all(&bytes).unwrap();
+        let progress = (total as f64 / size.parse::<f64>().unwrap()) * 100.0;
+        // println!("progress: {}", progress);
+        let json = format!(
+            r#"{{"progress":"{}","unique_id":"{}"}}"#,
+            progress, unique_id
+        );
+        window.emit("progress", json).unwrap();
+    }
+    "success".to_string()
 }
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![fetch, download])
+        .setup(|_app| Ok(()))
+        .invoke_handler(tauri::generate_handler![get, download])
         .run(tauri::generate_context!())
-        .expect("failed to run app");
+        .expect("error while running tauri application");
 }
