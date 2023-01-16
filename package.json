@@ -10,8 +10,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
-    "release": "release-it"
+    "tauri:build": "tauri build"
   },
   "repository": {
     "type": "git",
@@ -28,7 +27,6 @@
   "devDependencies": {
     "@tauri-apps/cli": "^1.0.5",
     "@vitejs/plugin-vue": "^3.0.1",
-    "release-it": "^15.4.1",
     "unplugin-auto-import": "^0.11.2",
     "unplugin-vue-components": "^0.22.4",
     "vite": "^3.0.2"
