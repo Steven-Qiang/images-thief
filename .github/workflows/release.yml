@@ -1,0 +1,135 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  semantic-release:
+    permissions:
+      contents: write # to be able to publish releases
+      issues: write # to be able to comment on released issues
+      pull-requests: write # to be able to comment on released pull requests
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.semantic_release.outputs.new_release_published }}
+      release_version: ${{ steps.semantic_release.outputs.new_release_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install -g pnpm && pnpm install
+
+      - name: Run semantic release
+        id: semantic_release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-tauri:
+    needs: semantic-release
+    if: needs.semantic-release.outputs.release_created == 'true'
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-20.04, windows-latest, macos-latest]
+        include:
+          - platform: ubuntu-20.04
+            rust_target: x86_64-unknown-linux-gnu
+            node_target: linux-x64
+          - platform: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            node_target: win32-x64
+          - platform: macos-latest
+            rust_target: x86_64-apple-darwin
+            node_target: darwin-x64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-20.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install frontend dependencies
+        run: npm install -g pnpm && pnpm install
+
+      - name: Build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: src-tauri
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-artifacts
+          path: src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*
+
+  create-release:
+    needs: [semantic-release, build-tauri]
+    if: needs.semantic-release.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.semantic-release.outputs.release_version }}
+          files: |
+            artifacts/**/*
+          generate_release_notes: true
+          draft: false

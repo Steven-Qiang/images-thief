@@ -1,84 +1,47 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "images-thief",
+  "version": "1.0.0",
+  "identifier": "com.steven-qiang.images-thief",
   "build": {
-    "beforeDevCommand": "yarn dev",
-    "beforeBuildCommand": "yarn build",
-    "devPath": "http://localhost:1420",
-    "distDir": "../dist",
-    "withGlobalTauri": false
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
   },
-  "package": {
-    "productName": "Images Thief",
-    "version": "3.1.0"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": true,
-      "fs": {
-        "scope": [
-          "**"
-        ]
-      },
-      "shell": {
-        "execute": true,
-        "scope": [
-          {
-            "name": "explorer",
-            "cmd": "explorer",
-            "args": true
-          }
-        ]
-      }
-    },
-    "bundle": {
-      "active": true,
-      "category": "DeveloperTool",
-      "copyright": "",
-      "deb": {
-        "depends": []
-      },
-      "externalBin": [],
-      "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.icns",
-        "icons/icon.ico"
-      ],
-      "identifier": "github.steven.imagethief",
-      "longDescription": "",
-      "macOS": {
-        "entitlements": null,
-        "exceptionDomain": "",
-        "frameworks": [],
-        "providerShortName": null,
-        "signingIdentity": null
-      },
-      "resources": [],
-      "shortDescription": "",
-      "targets": "all",
-      "windows": {
-        "certificateThumbprint": null,
-        "digestAlgorithm": "sha256",
-        "timestampUrl": "",
-        "wix": {
-          "language": "zh-CN"
-        }
-      }
-    },
-    "security": {
-      "csp": null
-    },
-    "updater": {
-      "active": false
-    },
+  "app": {
     "windows": [
       {
-        "fullscreen": false,
-        "height": 700,
-        "resizable": true,
-        "title": "图片小偷",
-        "width": 1000
+        "title": "Images Thief",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1200,
+        "minHeight": 700
       }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": true,
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/Steven-Qiang/images-thief/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4QTg1OTdEMjQwNEQyQkIKUldTNzBnUWtmVm1vT090OXhZQjgzRnlHVDdvWVVSU3FkSmtVVCsybDNTd0RuVEF5YzR1MnZoNDEK"
+    }
   }
 }

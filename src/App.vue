@@ -1,493 +1,743 @@
 <template>
-  <div style="user-select: none" ref="header">
-    <h2 style="margin-left: 50px">Images Thief 图片小偷</h2>
-    <h5 style="margin-left: 63px">
-      <span style="vertical-align: middle">批量下载随机图片接口的所有图片</span>
-      <img
-        src="https://visitor-badge.glitch.me/badge?page_id=images-thief"
-        loading="lazy"
-        style="vertical-align: middle; margin-left: 10px"
-      />
-    </h5>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="130px" :size="formSize" status-icon>
-      <el-form-item label="接口地址" prop="apiUrl">
-        <el-input v-model="form.apiUrl" style="max-width: 500px" />
-      </el-form-item>
-      <el-form-item label="保存目录" prop="outputDir">
-        <el-input
-          v-model="form.outputDir"
-          @click="tapOutputDir"
-          :readonly="true"
-          style="max-width: 500px"
-          @mousedown="(e) => e.preventDefault()"
-        />
-      </el-form-item>
-      <el-form-item label="更多选项">
-        <el-checkbox-group v-model="form.options" :disabled="running">
-          <el-tooltip class="box-item" effect="dark" content="部分接口可能限制了来源地址。" placement="top">
-            <el-checkbox label="setRefererUrl">来源地址</el-checkbox>
-          </el-tooltip>
-          <el-tooltip class="box-item" effect="dark" content="设置请求和下载的并发数限制。" placement="top">
-            <el-checkbox
-              label="setConcurrency"
-              @change="
-                () => {
-                  if (form.options.includes('setConcurrency')) {
-                    form.rawOptions.concurrency = 5;
-                  }
-                }
-              "
-              >设置并发数</el-checkbox
-            >
-          </el-tooltip>
-          <el-tooltip class="box-item" effect="dark" placement="top">
-            <template #content>
-              运行一定时间后可能会出现耗尽的现象。<br />
-              此为同一图片出现的次数的阈值设置。<br />
-              一旦超过将停止进程进行。设置为0则无视。
-            </template>
-            <el-checkbox
-              label="setMaxDuplicate"
-              @change="
-                () => {
-                  if (form.options.includes('setMaxDuplicate')) {
-                    form.rawOptions.maxDuplicate = 3;
-                  }
-                }
-              "
-              >设置出现最大阈值</el-checkbox
-            >
-          </el-tooltip>
-          <el-tooltip class="box-item" effect="dark" content="只保存下载链接，便于导出。不下载图片。" placement="top">
-            <el-checkbox
-              label="setOnlyRecord"
-              @change="
-                () => {
-                  form.rawOptions.onlyRecord = form.options.includes('setOnlyRecord');
-                }
-              "
-              >不下载图片</el-checkbox
-            >
-          </el-tooltip>
-        </el-checkbox-group>
-      </el-form-item>
-      <div style="display: flex">
-        <el-form-item label="并发数" v-if="isSetConcurrency" prop="rawOptions.concurrency">
-          <el-input-number v-model="form.rawOptions.concurrency" style="width: 150px" :min="1" />
-        </el-form-item>
-        <el-form-item label="设置阈值" v-if="isSetMaxDuplicate" prop="rawOptions.maxDuplicate">
-          <el-input-number v-model="form.rawOptions.maxDuplicate" style="width: 150px" :min="0" />
-        </el-form-item>
-      </div>
-      <el-form-item label="来源地址" v-if="isSetRefererUrl" prop="rawOptions.refererUrl">
-        <el-input v-model="form.rawOptions.refererUrl" style="max-width: 500px" />
-      </el-form-item>
-      <el-form-item>
-        <el-button :type="running ? 'danger' : 'primary'" @click="tapButton(formRef)">{{ btnText }}</el-button>
-        <el-button type="warning" v-if="tableData.length" :disabled="running" @click="tapReset">重置列表</el-button>
-        <el-button type="info" v-if="tableData.length" :disabled="running" @click="tapExportCsv">导出列表</el-button>
-        <div style="margin-left: 20px">
-          发现数量：{{ tableData.length }} ，完成数量：{{
-            tableData.filter((x) => x.progress == 100).length
-          }}
-          ，总耗时：{{ time }}秒
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <div>
+          <h1 class="header-title">
+            Images Thief <span class="header-version">v{{ appVersion }}</span>
+          </h1>
+          <p class="header-subtitle">
+            批量下载随机图片接口的所有图片
+          </p>
         </div>
-      </el-form-item>
-    </el-form>
-  </div>
-  <div class="table" :style="{ marginLeft: '50px', marginRight: '20px', width: 'calc(100% - 70px)' }">
-    <el-table
-      ref="tableRef"
-      row-key="url"
-      :data="tableData.slice((currentPage - 1) * pageSize, currentPage * pageSize)"
-      :stripe="true"
-      :border="true"
-      :style="{ height: tableHeight }"
-      @sort-change="tapSortChange"
-      :default-sort="{ prop: 'startTime', order: 'descending' }"
-    >
-      <el-table-column prop="url" label="图片地址" sortable />
-      <el-table-column prop="filename" label="文件名" sortable>
-        <template #default="scope">
-          <a href="#" @click="openInExplorer(scope.row.filename)" v-if="!form.rawOptions.onlyRecord">{{
-            scope.row.filename
-          }}</a>
-          <span v-else>{{ scope.row.filename }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column
-        prop="size"
-        label="文件大小"
-        width="180"
-        v-if="!form.rawOptions.onlyRecord"
-        sortable
-        align="center"
-      >
-        <template #default="scope">
-          <span>{{ prettyBytes(scope.row.size) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="duplicate" label="重复次数" width="120" sortable align="center">
-        <template #default="scope">
-          <span>{{ scope.row.duplicate }}次</span>
-        </template>
-      </el-table-column>
-      <el-table-column
-        fixed="right"
-        prop="progress"
-        label="进度"
-        width="180"
-        v-if="!form.rawOptions.onlyRecord"
-        align="center"
-      >
-        <template #default="scope">
-          <el-progress
-            :percentage="scope.row.progress"
-            :format="progressBarFormat"
-            :color="progressBarCustomColorMethod"
-          />
-        </template>
-      </el-table-column>
-      <el-table-column prop="startTime" label="开始时间" width="180" sortable align="center">
-        <template #default="scope">
-          <span>{{ scope.row.startTime }}</span>
-        </template>
-      </el-table-column>
-    </el-table>
-    <div style="margin: 10px 0">
-      <el-pagination
-        :page-size="pageSize"
-        layout="prev, pager, next"
-        :total="tableData.length"
-        @current-change="tapPagination"
-      >
-      </el-pagination>
-    </div>
-  </div>
-  <div class="footer" ref="footer">
-    @{{ new Date().getFullYear() }}&nbsp;
-    <a @click="shell.open('https://github.com/qiangmouren/images-thief')" target="_blank" rel="noopener noreferrer"
-      >Qiangmouren/images-thief</a
-    >
+        <div class="header-right">
+          <button type="button" class="btn btn-secondary" @click="checkForUpdate">
+            检查更新
+          </button>
+          <div class="status-indicator">
+            <div class="status-dot" :class="{ running: status.is_running }" />
+            <span>{{ status.is_running ? '运行中' : '已停止' }}</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Configuration Form -->
+      <div class="card">
+        <h2 class="card-title">
+          下载配置
+        </h2>
+
+        <form @submit.prevent="handleStart">
+          <!-- API URL -->
+          <div class="form-group">
+            <label class="form-label">接口地址</label>
+            <input
+              v-model="config.api_url"
+              type="url"
+              required
+              class="form-input"
+              :class="{ error: config.api_url && !isValidUrl(config.api_url) }"
+              placeholder="https://example.com/api/random-image"
+            >
+            <span v-if="config.api_url && !isValidUrl(config.api_url)" class="form-error">
+              请输入有效的URL地址
+            </span>
+            <span class="form-hint">
+              随机图片接口地址，每次请求返回不同的图片
+            </span>
+          </div>
+
+          <!-- Output Directory -->
+          <div class="form-group">
+            <label class="form-label">保存目录</label>
+            <div class="input-group">
+              <input
+                v-model="config.output_dir"
+                type="text"
+                readonly
+                class="form-input"
+              >
+              <button type="button" class="btn btn-secondary" @click="selectDirectory">
+                选择
+              </button>
+            </div>
+          </div>
+
+          <!-- Options -->
+          <div class="form-row">
+            <div>
+              <label class="form-label">并发数</label>
+              <input v-model.number="config.concurrency" type="number" min="1" max="20" class="form-input">
+              <span class="form-hint">同时下载的任务数，建议10-20</span>
+            </div>
+
+            <div>
+              <label class="form-label">重复阈值</label>
+              <input v-model.number="config.max_duplicate" type="number" min="0" class="form-input">
+              <span class="form-hint">重复次数超过此值停止，0=无限制</span>
+            </div>
+
+            <div>
+              <label class="form-label">最大重试次数</label>
+              <input v-model.number="config.max_retries" type="number" min="0" max="10" class="form-input">
+              <span class="form-hint">下载失败后的重试次数</span>
+            </div>
+
+            <div>
+              <label class="form-label">重试延迟(秒)</label>
+              <input v-model.number="config.retry_delay" type="number" min="1" max="60" class="form-input">
+              <span class="form-hint">重试前等待的秒数</span>
+            </div>
+          </div>
+
+          <!-- Referer URL -->
+          <div class="form-group">
+            <label class="form-label">来源地址 (可选)</label>
+            <input v-model="config.referer_url" type="url" class="form-input" placeholder="https://example.com">
+          </div>
+
+          <!-- Only Record -->
+          <div class="checkbox-group">
+            <input id="only-record" v-model="config.only_record" type="checkbox">
+            <label for="only-record">仅记录链接，不下载文件</label>
+          </div>
+
+          <!-- Actions -->
+          <div class="form-actions">
+            <div class="btn-group">
+              <button type="submit" class="btn" :class="status.is_running ? 'btn-danger' : 'btn-primary'">
+                {{ status.is_running ? '停止' : '开始' }}
+              </button>
+
+              <button v-if="items.length > 0" type="button" :disabled="status.is_running" class="btn btn-success" @click="exportResults">
+                导出CSV
+              </button>
+
+              <button v-if="items.length > 0" type="button" :disabled="status.is_running" class="btn btn-secondary" @click="saveHistory">
+                保存历史
+              </button>
+
+              <button v-if="items.length > 0" type="button" :disabled="status.is_running" class="btn btn-secondary" @click="clearList">
+                清空列表
+              </button>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="quick-stats">
+              <div class="quick-stat">
+                <span class="quick-stat-label">总数:</span>
+                <span class="quick-stat-value">{{ status.total_found }}</span>
+              </div>
+              <div class="quick-stat">
+                <span class="quick-stat-label">完成:</span>
+                <span class="quick-stat-value success">{{ status.total_completed }}</span>
+              </div>
+              <div class="quick-stat">
+                <span class="quick-stat-label">下载中:</span>
+                <span class="quick-stat-value info">{{ status.total_downloading }}</span>
+              </div>
+              <div v-if="status.total_failed > 0" class="quick-stat">
+                <span class="quick-stat-label">失败:</span>
+                <span class="quick-stat-value danger">{{ status.total_failed }}</span>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Stats Card -->
+      <stats-panel v-if="status.is_running || items.length > 0" :status="status" class="card" />
+
+      <!-- Search and Filter -->
+      <search-filter v-if="items.length > 0" @filter="handleFilter" />
+
+      <!-- Batch Actions -->
+      <batch-actions
+        v-if="items.length > 0"
+        :items="items"
+        :selected-ids="selectedIds"
+        @update-selection="selectedIds = $event"
+        @batch-retry="handleBatchRetry"
+        @batch-delete="handleBatchDelete"
+        @batch-export="handleBatchExport"
+      />
+
+      <!-- Results Table -->
+      <div v-if="items.length > 0" class="card">
+        <div class="table-header">
+          <h3 class="table-title">
+            下载列表 <span class="table-subtitle">(共 {{ filteredItems.length }} 项{{ filteredItems.length > 100 ? '，显示前100项' : '' }})</span>
+          </h3>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>
+                  <input type="checkbox" :checked="selectedIds.length === filteredItems.length && filteredItems.length > 0" @change="toggleSelectAll">
+                </th>
+                <th>文件名</th>
+                <th class="center">
+                  大小
+                </th>
+                <th class="center">
+                  状态
+                </th>
+                <th class="center">
+                  重复
+                </th>
+                <th class="progress-col">
+                  进度
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="item in filteredItems.slice(0, 100)"
+                :key="item.id"
+                :class="{ selected: selectedIds.includes(item.id) }"
+                @contextmenu="showContextMenu($event, item)"
+              >
+                <td>
+                  <input type="checkbox" :checked="selectedIds.includes(item.id)" @change="toggleItemSelection(item.id)">
+                </td>
+                <td>
+                  <a href="#" class="file-link" @click.prevent="openFile(item)">{{ item.filename }}</a>
+                </td>
+                <td class="center">
+                  {{ formatBytes(item.size) }}
+                </td>
+                <td class="center">
+                  <span class="status-badge" :class="item.status.toLowerCase()">{{ getStatusText(item.status) }}</span>
+                </td>
+                <td class="center">
+                  {{ item.duplicate_count }}
+                </td>
+                <td class="progress-col">
+                  <div class="progress-container">
+                    <div class="progress-bar">
+                      <div class="progress-fill" :class="item.status.toLowerCase()" :style="{ width: `${item.progress}%` }" />
+                    </div>
+                    <div class="progress-info">
+                      <span class="progress-percent">{{ item.progress }}%</span>
+                      <span v-if="item.status === DownloadStatus.Downloading" class="progress-text">
+                        <template v-if="item.speed">
+                          {{ formatSpeed(item.speed) }} | {{ formatTimeRemaining(item) }}
+                        </template>
+                        <template v-else>
+                          下载中...
+                        </template>
+                      </span>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- Toast Notifications -->
+    <toast ref="toastRef" />
+
+    <!-- Context Menu -->
+    <context-menu ref="contextMenuRef" @action="handleContextAction" />
   </div>
 </template>
 
-<script lang="ts" setup>
-import { reactive, ref, watch, onMounted, computed } from 'vue';
-import { ElMessageBox, FormInstance, FormRules } from 'element-plus';
-import { ElTable } from 'element-plus';
-import * as fs from '@tauri-apps/api/fs';
-import * as path from '@tauri-apps/api/path';
-import * as dialog from '@tauri-apps/api/dialog';
-import { invoke } from '@tauri-apps/api/tauri';
-import * as shell from '@tauri-apps/api/shell';
+<script setup lang="ts">
+import type { UnlistenFn } from '@tauri-apps/api/event';
+import { getVersion } from '@tauri-apps/api/app';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { nanoid } from 'nanoid';
+import { desktopDir, join } from '@tauri-apps/api/path';
+import { open, confirm as tauriConfirm } from '@tauri-apps/plugin-dialog';
+import { onMounted, onUnmounted, ref, useTemplateRef } from 'vue';
+import BatchActions from './components/BatchActions.vue';
+import ContextMenu from './components/ContextMenu.vue';
+import SearchFilter from './components/SearchFilter.vue';
+import StatsPanel from './components/StatsPanel.vue';
+import Toast from './components/Toast.vue';
+import { useStorage } from './composables/useStorage';
+import { DownloadStatus, DownloadStatusUtils } from './utils/downloadStatus';
 
-import exportToCsv from './util/exportToCsv';
-import prettyBytes from 'pretty-bytes';
-import Queue from 'p-queue';
-
-interface Row {
-  uniqueId: string;
-  url: string;
-  size: number;
-  duplicate: number;
-  filename: string;
-  progress: number;
-  startTime: string;
+interface DownloadConfig {
+  api_url: string;
+  output_dir: string;
+  referer_url: string | null;
+  concurrency: number;
+  max_duplicate: number;
+  only_record: boolean;
+  max_retries: number;
+  retry_delay: number;
 }
 
-const isdev = import.meta.env.DEV;
-const tableRef = ref<InstanceType<typeof ElTable>>();
-const tableData = ref<Row[]>([]);
-let currentPage = ref(1);
-let pageSize = ref(20);
+interface DownloadItem {
+  id: string;
+  url: string;
+  filename: string;
+  size: number;
+  progress: number;
+  status: DownloadStatus;
+  duplicate_count: number;
+  start_time: string;
+  hash: string | null;
+  downloaded?: number;
+  speed?: number;
+}
 
-let time = ref(0);
-let btnText = ref('开始');
-let running = ref<boolean>(false);
-const formSize = ref('default');
-const formRef = ref<FormInstance>();
-const form = reactive({
-  apiUrl: isdev ? 'http://www.lxh5068.com/tapi/acgurl.php' : '',
-  outputDir: '',
-  options: ['setConcurrency', 'setRefererUrl'] as string[],
-  rawOptions: {
-    refererUrl: '',
-    maxDuplicate: 3,
-    onlyRecord: false,
-    concurrency: 5,
-  },
+interface BatchStatus {
+  is_running: boolean;
+  total_found: number;
+  total_completed: number;
+  total_duplicates: number;
+  total_failed: number;
+  total_downloading: number;
+  total_size: number;
+  downloaded_size: number;
+  avg_speed: number;
+  elapsed_time: number;
+}
+
+const config = useStorage<DownloadConfig>('images-thief-config', {
+  api_url: '',
+  output_dir: '',
+  referer_url: null,
+  concurrency: 10,
+  max_duplicate: 10,
+  only_record: false,
+  max_retries: 3,
+  retry_delay: 3
 });
 
-const isSetRefererUrl = computed(() => form.options.includes('setRefererUrl'));
-const isSetMaxDuplicate = computed(() => form.options.includes('setMaxDuplicate'));
-const isSetOnlyRecord = computed(() => form.options.includes('setOnlyRecord'));
-const isSetConcurrency = computed(() => form.options.includes('setConcurrency'));
-
-const rules = reactive<FormRules>({
-  apiUrl: {
-    required: true,
-    message: '请输入正确的URL',
-    trigger: 'blur',
-    type: 'url',
-  },
-  outputDir: {
-    required: true,
-    message: '请选择保存目录',
-    trigger: 'blur',
-  },
-  'rawOptions.refererUrl': {
-    required: true,
-    message: '请输入正确的来源URL',
-    trigger: 'blur',
-    type: 'url',
-  },
-  'rawOptions.maxDuplicate': {
-    required: true,
-    message: '请输入正确的阈值',
-    trigger: 'blur',
-    type: 'number',
-  },
-  'rawOptions.concurrency': {
-    required: true,
-    message: '请输入正确的并发数',
-    trigger: 'blur',
-    type: 'number',
-  },
+const status = ref<BatchStatus>({
+  is_running: false,
+  total_found: 0,
+  total_completed: 0,
+  total_duplicates: 0,
+  total_failed: 0,
+  total_downloading: 0,
+  total_size: 0,
+  downloaded_size: 0,
+  avg_speed: 0,
+  elapsed_time: 0
 });
 
-const header = ref<Element>();
-const footer = ref<Element>();
-const tableHeight = computed(() => {
-  const $header = header.value?.getBoundingClientRect();
-  const $footer = footer.value?.getBoundingClientRect();
+const items = ref<DownloadItem[]>([]);
+const filteredItems = ref<DownloadItem[]>([]);
+const selectedIds = ref<string[]>([]);
+const toastRef = useTemplateRef('toastRef');
+const contextMenuRef = useTemplateRef('contextMenuRef');
 
-  const headerHeight = $header?.height || 0;
-  const footerHeight = $footer?.height || 0;
-  const minHeight = window.innerHeight - headerHeight - footerHeight - 110;
-  return minHeight + 'px';
+const filters = ref({
+  search: '',
+  status: '',
+  sortBy: 'start_time',
+  sortOrder: 'desc' as 'asc' | 'desc'
 });
+
+const appVersion = ref('...');
+
+let statusInterval: number | null = null;
+let unlistenProgress: UnlistenFn | null = null;
+let unlistenItemAdded: UnlistenFn | null = null;
 
 onMounted(async () => {
-  form.outputDir = await path.join(await path.desktopDir(), 'download');
-  form.rawOptions.refererUrl = form.apiUrl;
+  // Get app version
+  appVersion.value = await getVersion();
+
+  // Set default output directory
+  if (!config.value.output_dir) {
+    const desktopPath = await desktopDir();
+    // Use Tauri's cross-platform path join function
+    config.value.output_dir = await join(desktopPath, 'images-thief-downloads');
+  }
+
+  // Load history
+  try {
+    const history = await invoke('load_history') as DownloadItem[];
+    if (history.length > 0) {
+      items.value = history;
+      applyFilters();
+    }
+  } catch (error) {
+    console.error('Failed to load history:', error);
+  }
+
+  // Listen to events
+  unlistenProgress = await listen('download_progress', (event) => {
+    const item = event.payload as DownloadItem;
+    const index = items.value.findIndex((i) => i.id === item.id);
+    if (index !== -1) {
+      items.value[index] = item;
+      // Only update filtered list if item is in it
+      const filteredIndex = filteredItems.value.findIndex((i) => i.id === item.id);
+      if (filteredIndex !== -1) {
+        filteredItems.value[filteredIndex] = item;
+      }
+    }
+  });
+
+  unlistenItemAdded = await listen('download_item_added', (event) => {
+    const item = event.payload as DownloadItem;
+    items.value.unshift(item);
+    applyFilters();
+  });
+
+  // Listen to batch start event to clear list
+  await listen('batch_started', () => {
+    items.value = [];
+    filteredItems.value = [];
+    selectedIds.value = [];
+  });
+
+  // Start status polling
+  statusInterval = setInterval(updateStatus, 1000);
 });
 
-watch(
-  () => form.apiUrl,
-  (newVal, oldVal) => {
-    if (newVal === oldVal) return;
-    form.rawOptions.refererUrl = newVal;
-  }
-);
+onUnmounted(async () => {
+  if (statusInterval) clearInterval(statusInterval);
+  if (unlistenProgress) unlistenProgress();
+  if (unlistenItemAdded) unlistenItemAdded();
 
-listen('progress', (event) => {
-  if (typeof event.payload == 'string') {
-    let { unique_id, progress } = JSON.parse(event.payload);
-    progress = parseInt(progress);
-    const index = tableData.value.findIndex((item) => item.uniqueId === unique_id);
-    if (index > -1) {
-      tableData.value[index].progress = progress;
-      tableRef.value?.doLayout();
+  // Save history on exit
+  try {
+    await invoke('save_history');
+  } catch (error) {
+    console.error('Failed to save history:', error);
+  }
+});
+
+async function updateStatus() {
+  try {
+    const newStatus: BatchStatus = await invoke('get_batch_status');
+    status.value = newStatus;
+  } catch (error) {
+    console.error('Failed to get status:', error);
+  }
+}
+
+async function handleStart() {
+  if (status.value.is_running) {
+    try {
+      await invoke('stop_batch_download');
+      await invoke('save_history');
+      toastRef.value?.addToast('info', '已停止下载');
+    } catch (error) {
+      toastRef.value?.addToast('error', `停止失败: ${error}`);
+    }
+  } else {
+    if (!config.value.api_url) {
+      toastRef.value?.addToast('warning', '请输入API地址');
+      return;
+    }
+    try {
+      await invoke('start_batch_download', { config: config.value });
+      toastRef.value?.addToast('success', '开始下载任务');
+    } catch (error) {
+      toastRef.value?.addToast('error', `启动失败: ${error}`);
     }
   }
-});
-const progressBarFormat = (percentage) => {
-  return percentage === 100 ? '完成' : `${percentage}%`;
-};
-const progressBarCustomColorMethod = (percentage) => {
-  if (percentage < 30) {
-    return '#909399';
-  } else if (percentage < 70) {
-    return '#e6a23c';
-  } else {
-    return '#67c23a';
+}
+
+async function selectDirectory() {
+  const selected = await open({
+    directory: true,
+    defaultPath: config.value.output_dir
+  });
+
+  if (selected && typeof selected === 'string') {
+    config.value.output_dir = selected;
   }
-};
-const createQueue = () => {
-  const concurrency = parseInt(form.rawOptions.concurrency.toString());
-  return new Queue({
-    concurrency,
-    interval: 100,
+}
+
+async function checkForUpdate() {
+  try {
+    toastRef.value?.addToast('info', '正在检查更新...');
+    const updateResult = await invoke('check_update') as any;
+
+    if (updateResult) {
+      if (updateResult.available) {
+        const shouldUpdate = await tauriConfirm(
+          `发现新版本 ${updateResult.version}，是否立即更新？\n\n更新内容：\n${updateResult.body || '无'}`,
+          {
+            title: '发现新版本',
+            okLabel: '立即更新',
+            cancelLabel: '稍后再说'
+          }
+        );
+
+        if (shouldUpdate) {
+          // 显示更新进度
+          toastRef.value?.addToast('info', `正在下载新版本 ${updateResult.version}...`);
+
+          // 安装更新
+          await invoke('install_update');
+
+          toastRef.value?.addToast('success', '更新下载完成，将在下次启动时生效');
+        }
+      } else {
+        toastRef.value?.addToast('success', '当前已是最新版本');
+      }
+    } else {
+      toastRef.value?.addToast('info', '无法检查更新');
+    }
+  } catch (error) {
+    console.error('检查更新失败:', error);
+    toastRef.value?.addToast('error', `检查更新失败: ${error}`);
+  }
+}
+
+async function exportResults() {
+  try {
+    const csvContent = `URL,Filename,Size,Status,Duplicates\n${
+      items.value.map((item) => `${item.url},${item.filename},${item.size},${item.status},${item.duplicate_count}`).join('\n')}`;
+
+    const filename = `images-thief-${Date.now()}.csv`;
+    const filePath = await invoke('save_csv', { content: csvContent, filename }) as string;
+    toastRef.value?.addToast('success', `CSV已保存到: ${filePath}`);
+  } catch (error) {
+    toastRef.value?.addToast('error', `导出失败: ${error}`);
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`;
+}
+
+function getStatusText(status: DownloadStatus): string {
+  return DownloadStatusUtils.getText(status);
+}
+
+function showContextMenu(event: MouseEvent, item: DownloadItem) {
+  const menuItems = [
+    { label: '打开文件', icon: '📄', action: 'open-file', disabled: item.status !== DownloadStatus.Completed },
+    { label: '打开文件夹', icon: '📁', action: 'open-folder' },
+    {
+      label: '重新下载',
+      icon: '🔄',
+      action: 'retry',
+      disabled: item.status === DownloadStatus.Completed
+    },
+    { label: '复制链接', icon: '🔗', action: 'copy-url' },
+  ];
+  contextMenuRef.value?.show(event, item, menuItems);
+}
+
+async function handleContextAction(action: string, item: DownloadItem) {
+  switch (action) {
+    case 'open-file':
+      await openFile(item);
+      break;
+    case 'open-folder':
+      await openFolder();
+      break;
+    case 'retry':
+      await retryDownload(item);
+      break;
+    case 'copy-url':
+      await copyToClipboard(item.url);
+      break;
+  }
+}
+
+async function openFile(item: DownloadItem) {
+  if (item.status !== 'Completed') {
+    toastRef.value?.addToast('warning', '文件尚未下载完成');
+    return;
+  }
+  try {
+    await invoke('open_file', {
+      outputDir: config.value.output_dir,
+      filename: item.filename
+    });
+  } catch (error) {
+    toastRef.value?.addToast('error', `打开文件失败: ${error}`);
+  }
+}
+
+async function openFolder() {
+  try {
+    await invoke('open_folder', { outputDir: config.value.output_dir });
+  } catch (error) {
+    toastRef.value?.addToast('error', `打开文件夹失败: ${error}`);
+  }
+}
+
+async function retryDownload(item: DownloadItem) {
+  try {
+    await invoke('retry_download', {
+      url: item.url,
+      outputDir: config.value.output_dir,
+      filename: item.filename,
+      refererUrl: config.value.referer_url
+    });
+    item.status = DownloadStatus.Downloading;
+    item.progress = 0;
+    toastRef.value?.addToast('success', `开始重新下载: ${item.filename}`);
+  } catch (error) {
+    toastRef.value?.addToast('error', `重新下载失败: ${error}`);
+  }
+}
+
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toastRef.value?.addToast('success', '链接已复制到剪贴板');
+  } catch (error) {
+    toastRef.value?.addToast('error', `复制失败: ${error}`);
+  }
+}
+
+function handleFilter(newFilters: typeof filters.value) {
+  filters.value = newFilters;
+  applyFilters();
+}
+
+function applyFilters() {
+  let result = [...items.value];
+
+  // 搜索过滤
+  if (filters.value.search) {
+    result = result.filter((item) =>
+      item.filename.toLowerCase().includes(filters.value.search.toLowerCase())
+    );
+  }
+
+  // 状态过滤
+  if (filters.value.status) {
+    result = result.filter((item) => item.status === filters.value.status);
+  }
+
+  // 排序
+  result.sort((a, b) => {
+    const aVal = a[filters.value.sortBy as keyof DownloadItem] ?? '';
+    const bVal = b[filters.value.sortBy as keyof DownloadItem] ?? '';
+    const order = filters.value.sortOrder === 'asc' ? 1 : -1;
+
+    if (aVal < bVal) return -order;
+    if (aVal > bVal) return order;
+    return 0;
   });
-};
-/**
- * 获取接口重定向数据
- * 返回包括 图片网址 大小 文件名
- */
-const getRedirectInfo = async (): Promise<{ url: string; size: number; filename: string } | null> => {
-  return invoke('get', {
-    url: form.apiUrl,
-    referer: form.rawOptions.refererUrl,
-  }).then(($resp) => {
-    if (!$resp) return null;
-    const json = JSON.parse($resp + '');
-    return json;
-  });
-};
-const checkUrlRedirection = async () => {
-  const resp = await getRedirectInfo();
-  if (!resp) {
-    ElMessageBox.alert('该链接似乎不存在跳转，请检查URL是否正确', '提示');
+
+  filteredItems.value = result;
+}
+
+function toggleItemSelection(id: string) {
+  const index = selectedIds.value.indexOf(id);
+  if (index > -1) {
+    selectedIds.value.splice(index, 1);
+  } else {
+    selectedIds.value.push(id);
+  }
+}
+
+function toggleSelectAll() {
+  if (selectedIds.value.length === filteredItems.value.length) {
+    selectedIds.value = [];
+  } else {
+    selectedIds.value = filteredItems.value.map((item) => item.id);
+  }
+}
+
+async function handleBatchRetry() {
+  const selectedItems = items.value.filter((item) => selectedIds.value.includes(item.id));
+  let successCount = 0;
+
+  for (const item of selectedItems) {
+    try {
+      await invoke('retry_download', {
+        url: item.url,
+        outputDir: config.value.output_dir,
+        filename: item.filename,
+        refererUrl: config.value.referer_url
+      });
+      item.status = DownloadStatus.Downloading;
+      item.progress = 0;
+      successCount++;
+    } catch (error) {
+      console.error(`Failed to retry ${item.filename}:`, error);
+    }
+  }
+
+  toastRef.value?.addToast('success', `已重新下载 ${successCount} 个文件`);
+  selectedIds.value = [];
+}
+
+function handleBatchDelete() {
+  items.value = items.value.filter((item) => !selectedIds.value.includes(item.id));
+  selectedIds.value = [];
+  applyFilters();
+  toastRef.value?.addToast('success', '已删除选中记录');
+}
+
+async function handleBatchExport() {
+  try {
+    const selectedItems = items.value.filter((item) => selectedIds.value.includes(item.id));
+    const csvContent = `URL,Filename,Size,Status\n${
+      selectedItems.map((item) => `${item.url},${item.filename},${item.size},${item.status}`).join('\n')}`;
+
+    const filename = `selected-images-${Date.now()}.csv`;
+    const filePath = await invoke('save_csv', { content: csvContent, filename }) as string;
+    toastRef.value?.addToast('success', `已导出选中项目到: ${filePath}`);
+  } catch (error) {
+    toastRef.value?.addToast('error', `导出失败: ${error}`);
+  }
+}
+
+function isValidUrl(url: string): boolean {
+  try {
+    // eslint-disable-next-line no-new
+    new URL(url);
+    return true;
+  } catch {
     return false;
   }
-  return true;
-};
+}
 
-let timer: number | null | NodeJS.Timer;
-let queue: Queue | null;
-const stopQueue = async () => {
-  btnText.value = '停止中...';
-  if (timer) {
-    // 停止计时器
-    clearTimeout(timer);
-    timer = null;
+function formatSpeed(bytesPerSecond: number): string {
+  if (bytesPerSecond < 1024) return `${bytesPerSecond.toFixed(0)} B/s`;
+  if (bytesPerSecond < 1024 * 1024) return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+  return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
+}
+
+function formatTimeRemaining(item: DownloadItem): string {
+  if (!item.speed || item.speed === 0 || item.progress >= 100) return '';
+
+  const remaining = item.size * (1 - item.progress / 100);
+  const seconds = Math.ceil(remaining / item.speed);
+
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+async function saveHistory() {
+  try {
+    await invoke('save_history');
+    toastRef.value?.addToast('success', '历史记录已保存');
+  } catch (error) {
+    toastRef.value?.addToast('error', `保存失败: ${error}`);
   }
-  if (queue) {
-    // 停止线程
-    queue.pause();
-    queue.clear();
-    queue = null;
+}
+
+async function clearList() {
+  const confirmed = await tauriConfirm('确定要清空所有下载记录吗？', { title: '确认操作', kind: 'warning' });
+  if (confirmed) {
+    items.value = [];
+    filteredItems.value = [];
+    selectedIds.value = [];
+    toastRef.value?.addToast('success', '列表已清空');
   }
-  running.value = false;
-  btnText.value = '开始';
-};
-const startQueue = async () => {
-  // 创建计时器
-  time.value = 0;
-  timer = setInterval(() => {
-    time.value++;
-  }, 1000);
-  running.value = true;
-  btnText.value = '停止';
-
-  // 检测链接是否存在跳转
-  if (!(await checkUrlRedirection())) {
-    return stopQueue();
-  }
-  // 创建目录
-  await fs.createDir(form.outputDir, { recursive: true }).catch(console.log);
-
-  queue = createQueue();
-  while (running.value) {
-    queue.add(async () => {
-      const redirectInfo = await getRedirectInfo();
-      const uniqueId = nanoid();
-      if (redirectInfo && redirectInfo.url) {
-        const { url, size, filename } = redirectInfo;
-        let index = tableData.value.findIndex((item) => item.uniqueId === uniqueId);
-        let duplicate = 1;
-        if (index == -1) {
-          // 初始值
-          tableData.value.push({
-            startTime: new Date().toLocaleString('lt'),
-            uniqueId,
-            url,
-            size: Number(size),
-            filename,
-            duplicate,
-            progress: 0,
-          });
-        } else {
-          // 重复值
-          duplicate = tableData.value[index].duplicate++;
-        }
-
-        if (form.rawOptions.maxDuplicate != 0 && duplicate >= form.rawOptions.maxDuplicate) {
-          // 超过阈值
-          // tableData.value[index].status = 'exception';
-          await stopQueue();
-          ElMessageBox.alert('已超过预定阈值,停止运行', '提示');
-          return;
-        }
-        if (!form.rawOptions.onlyRecord) {
-          // 下载
-          invoke('download', {
-            url,
-            referer: form.rawOptions.refererUrl,
-            filename,
-            size,
-            path: form.outputDir,
-            uniqueId,
-          });
-        }
-        tableRef.value?.doLayout();
-      }
-    });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-};
-
-const tapExportCsv = async () => {
-  let head = [['图片链接', '文件名', '图片大小']];
-  if (form.rawOptions.onlyRecord) head = [head[0].slice(0, 2)];
-  const data = head.concat(
-    tableData.value.map((item) => {
-      let t = [item.url, item.filename];
-      if (!form.rawOptions.onlyRecord) t.push(prettyBytes(item.size));
-      return t;
-    }) as any[]
-  );
-  exportToCsv('export.csv', data);
-};
-
-const tapReset = async () => {
-  tableData.value = [];
-  tableRef.value?.doLayout();
-  time.value = 0;
-  queue = null;
-};
-
-const tapButton = async (formEl: FormInstance | undefined) => {
-  if (running.value) {
-    await stopQueue();
-  } else {
-    formEl &&
-      formEl.validate((valid) => {
-        if (valid) {
-          startQueue();
-        }
-      });
-  }
-};
-
-const tapOutputDir = async () => {
-  const ret = await dialog.open({
-    defaultPath: form.outputDir,
-    directory: true,
-  });
-  if (ret && typeof ret == 'string') {
-    form.outputDir = ret;
-  }
-};
-
-const tapPagination = (_currentPage: number) => {
-  currentPage.value = _currentPage;
-  tableRef.value?.doLayout();
-};
-
-const tapSortChange = ({ prop, order }: { prop: string; order: string }) => {
-  if (order == 'ascending') {
-    tableData.value = tableData.value.sort((a, b) => {
-      if (a[prop] > b[prop]) return 1;
-      if (a[prop] < b[prop]) return -1;
-      return 0;
-    });
-  } else if (order == 'descending') {
-    tableData.value = tableData.value.sort((a, b) => {
-      if (a[prop] > b[prop]) return -1;
-      if (a[prop] < b[prop]) return 1;
-      return 0;
-    });
-  }
-  tableRef.value?.doLayout();
-};
-
-const openInExplorer = async (filename) => {
-  const p = await path.join(form.outputDir, filename);
-  const c = new shell.Command('explorer', ['/select,' + p]);
-  c.execute();
-};
+}
 </script>
