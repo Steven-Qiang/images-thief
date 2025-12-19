@@ -12,76 +12,103 @@ permissions:
   contents: read
 
 jobs:
-  semantic-release:
+  detect-release:
     permissions:
       contents: write # to be able to publish releases
       issues: write # to be able to comment on released issues
       pull-requests: write # to be able to comment on released pull requests
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.semantic_release.outputs.new_release_published }}
-      release_version: ${{ steps.semantic_release.outputs.new_release_version }}
+      should-release: ${{ steps.detect.outputs.should-release }}
+      release-version: ${{ steps.detect.outputs.release-version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          node-version: '20'
+          version: 10
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm install -g pnpm && pnpm install
+        run: pnpm install
 
-      - name: Run semantic release
-        id: semantic_release
-        run: npx semantic-release
+      - name: Detect if release is needed (dry-run)
+        id: detect
+        run: |
+          # Dry run to check if a release would be published
+          OUTPUT=$(npx semantic-release --dry-run 2>&1 | tee /tmp/dry-run-output)
+          echo "$OUTPUT"
+
+          # Check if dry-run indicates a release would happen by looking for "Published release"
+          if echo "$OUTPUT" | grep -q "Published release"; then
+            # Extract version from output - typically in format "Published release X.X.X"
+            VERSION=$(echo "$OUTPUT" | grep "Published release" | sed -E 's/.*Published release ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+            if [ ! -z "$VERSION" ]; then
+              echo "should-release=true" >> $GITHUB_OUTPUT
+              echo "release-version=$VERSION" >> $GITHUB_OUTPUT
+              echo "Detected version: $VERSION"
+            else
+              echo "should-release=false" >> $GITHUB_OUTPUT
+              echo "release-version=" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "release-version=" >> $GITHUB_OUTPUT
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build-tauri:
-    needs: semantic-release
-    if: needs.semantic-release.outputs.release_created == 'true'
+  publish-tauri:
+    needs: detect-release
+    if: needs.detect-release.outputs.should-release == 'true'
     permissions:
       contents: write
-    runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [ubuntu-20.04, windows-latest, macos-latest]
         include:
-          - platform: ubuntu-20.04
-            rust_target: x86_64-unknown-linux-gnu
-            node_target: linux-x64
-          - platform: windows-latest
-            rust_target: x86_64-pc-windows-msvc
-            node_target: win32-x64
-          - platform: macos-latest
-            rust_target: x86_64-apple-darwin
-            node_target: darwin-x64
+          - platform: 'macos-latest' # for Arm based macs (M1 and above).
+            args: '--target aarch64-apple-darwin'
+            cache-key: 'macos-aarch64'
+          - platform: 'macos-latest' # for Intel based macs.
+            args: '--target x86_64-apple-darwin'
+            cache-key: 'macos-x86_64'
+          - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
+            args: ''
+            cache-key: 'ubuntu'
+          - platform: 'windows-latest'
+            args: ''
+            cache-key: 'windows'
 
+    runs-on: ${{ matrix.platform }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Install dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-20.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
+          cache: 'pnpm'
 
-      - name: Install Rust
+      - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_target }}
+          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Cache Rust
         uses: actions/cache@v4
@@ -90,46 +117,63 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.cache-key }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install frontend dependencies
-        run: npm install -g pnpm && pnpm install
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - name: Build
-        uses: tauri-apps/tauri-action@v0
+      - name: install frontend dependencies
+        run: pnpm install
+
+      - name: Sync versions before build
+        run: node scripts/sync-versions.js ${{needs.detect-release.outputs.release-version}}
+
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          projectPath: src-tauri
+          tagName: v__VERSION__
+          releaseName: 'v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.platform }}-artifacts
-          path: src-tauri/target/${{ matrix.rust_target }}/release/bundle/**/*
-
-  create-release:
-    needs: [semantic-release, build-tauri]
-    if: needs.semantic-release.outputs.release_created == 'true'
+  release:
+    needs: [detect-release, publish-tauri]
+    if: needs.detect-release.outputs.should-release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/checkout@v6
         with:
-          path: artifacts
+          fetch-depth: 0
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          tag_name: v${{ needs.semantic-release.outputs.release_version }}
-          files: |
-            artifacts/**/*
-          generate_release_notes: true
-          draft: false
+          version: 10
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Sync versions
+        run: node scripts/sync-versions.js ${{needs.detect-release.outputs.release-version}}
+
+      - name: Run semantic-release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
