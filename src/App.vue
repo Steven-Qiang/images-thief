@@ -5,20 +5,11 @@
       <div class="header-content">
         <div>
           <h1 class="header-title">
-            Images Thief <span class="header-version">v{{ appVersion }}</span>
+            Images Thief <span class="header-version">v{{ appVersion }} <update-modal /></span>
           </h1>
           <p class="header-subtitle">
             批量下载随机图片接口的所有图片
           </p>
-        </div>
-        <div class="header-right">
-          <button type="button" class="btn btn-secondary" @click="checkForUpdate">
-            检查更新
-          </button>
-          <div class="status-indicator">
-            <div class="status-dot" :class="{ running: status.is_running }" />
-            <span>{{ status.is_running ? '运行中' : '已停止' }}</span>
-          </div>
         </div>
       </div>
     </header>
@@ -253,57 +244,22 @@
 
 <script setup lang="ts">
 import type { UnlistenFn } from '@tauri-apps/api/event';
+import type { BatchStatus, DownloadConfig, DownloadItem } from './types';
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { desktopDir, join } from '@tauri-apps/api/path';
 import { open, confirm as tauriConfirm } from '@tauri-apps/plugin-dialog';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { onMounted, onUnmounted, ref, useTemplateRef } from 'vue';
 import BatchActions from './components/BatchActions.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import SearchFilter from './components/SearchFilter.vue';
 import StatsPanel from './components/StatsPanel.vue';
 import Toast from './components/Toast.vue';
+import UpdateModal from './components/UpdateModal.vue';
 import { useStorage } from './composables/useStorage';
 import { DownloadStatus, DownloadStatusUtils } from './utils/downloadStatus';
-
-interface DownloadConfig {
-  api_url: string;
-  output_dir: string;
-  referer_url: string | null;
-  concurrency: number;
-  max_duplicate: number;
-  only_record: boolean;
-  max_retries: number;
-  retry_delay: number;
-}
-
-interface DownloadItem {
-  id: string;
-  url: string;
-  filename: string;
-  size: number;
-  progress: number;
-  status: DownloadStatus;
-  duplicate_count: number;
-  start_time: string;
-  hash: string | null;
-  downloaded?: number;
-  speed?: number;
-}
-
-interface BatchStatus {
-  is_running: boolean;
-  total_found: number;
-  total_completed: number;
-  total_duplicates: number;
-  total_failed: number;
-  total_downloading: number;
-  total_size: number;
-  downloaded_size: number;
-  avg_speed: number;
-  elapsed_time: number;
-}
 
 const config = useStorage<DownloadConfig>('images-thief-config', {
   api_url: '',
@@ -457,43 +413,6 @@ async function selectDirectory() {
   }
 }
 
-async function checkForUpdate() {
-  try {
-    toastRef.value?.addToast('info', '正在检查更新...');
-    const updateResult = await invoke('check_update') as any;
-
-    if (updateResult) {
-      if (updateResult.available) {
-        const shouldUpdate = await tauriConfirm(
-          `发现新版本 ${updateResult.version}，是否立即更新？\n\n更新内容：\n${updateResult.body || '无'}`,
-          {
-            title: '发现新版本',
-            okLabel: '立即更新',
-            cancelLabel: '稍后再说'
-          }
-        );
-
-        if (shouldUpdate) {
-          // 显示更新进度
-          toastRef.value?.addToast('info', `正在下载新版本 ${updateResult.version}...`);
-
-          // 安装更新
-          await invoke('install_update');
-
-          toastRef.value?.addToast('success', '更新下载完成，将在下次启动时生效');
-        }
-      } else {
-        toastRef.value?.addToast('success', '当前已是最新版本');
-      }
-    } else {
-      toastRef.value?.addToast('info', '无法检查更新');
-    }
-  } catch (error) {
-    console.error('检查更新失败:', error);
-    toastRef.value?.addToast('error', `检查更新失败: ${error}`);
-  }
-}
-
 async function exportResults() {
   try {
     const csvContent = `URL,Filename,Size,Status,Duplicates\n${
@@ -552,15 +471,13 @@ async function handleContextAction(action: string, item: DownloadItem) {
 }
 
 async function openFile(item: DownloadItem) {
-  if (item.status !== 'Completed') {
+  if (item.status !== DownloadStatus.Completed) {
     toastRef.value?.addToast('warning', '文件尚未下载完成');
     return;
   }
   try {
-    await invoke('open_file', {
-      outputDir: config.value.output_dir,
-      filename: item.filename
-    });
+    const filePath = await join(config.value.output_dir, item.filename);
+    await openPath(filePath);
   } catch (error) {
     toastRef.value?.addToast('error', `打开文件失败: ${error}`);
   }
@@ -568,7 +485,7 @@ async function openFile(item: DownloadItem) {
 
 async function openFolder() {
   try {
-    await invoke('open_folder', { outputDir: config.value.output_dir });
+    await openPath(config.value.output_dir);
   } catch (error) {
     toastRef.value?.addToast('error', `打开文件夹失败: ${error}`);
   }
@@ -741,3 +658,475 @@ async function clearList() {
   }
 }
 </script>
+
+<style scoped>
+.header {
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 20px 30px;
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+}
+
+.header-version {
+  font-size: 14px;
+  color: #999;
+  font-weight: 400;
+  margin-left: 8px;
+}
+
+.header-subtitle {
+  font-size: 13px;
+  color: #666;
+  margin-top: 4px;
+}
+.update-link {
+  font-size: 12px;
+  color: #007bff;
+  text-decoration: none;
+}
+
+.header-right {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+  font-weight: 500;
+}
+
+.btn:hover {
+  background: #f8f8f8;
+}
+
+.btn-primary {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1976d2;
+}
+
+.btn-primary:hover {
+  background: #1565c0;
+}
+
+.btn-danger {
+  background: #d32f2f;
+  color: #fff;
+  border-color: #d32f2f;
+}
+
+.btn-danger:hover {
+  background: #c62828;
+}
+
+.btn-success {
+  background: #388e3c;
+  color: #fff;
+  border-color: #388e3c;
+}
+
+.btn-success:hover {
+  background: #2e7d32;
+}
+
+.btn-secondary {
+  background: #757575;
+  color: #fff;
+  border-color: #757575;
+}
+
+.btn-secondary:hover {
+  background: #616161;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #666;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #999;
+}
+
+.status-dot.running {
+  background: #4caf50;
+}
+
+.main {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 30px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.card-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #555;
+}
+
+.form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+.form-input:read-only {
+  background: #f5f5f5;
+  cursor: default;
+}
+
+.form-input.error {
+  border-color: #d32f2f;
+}
+
+.form-hint {
+  font-size: 12px;
+  color: #999;
+  margin-top: 10px;
+  display: block;
+}
+
+.form-error {
+  font-size: 12px;
+  color: #d32f2f;
+  margin-top: 4px;
+  display: block;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.input-group {
+  display: flex;
+}
+
+.input-group .form-input {
+  border-radius: 4px 0 0 4px;
+  flex: 1;
+}
+
+.input-group .btn {
+  border-radius: 0 4px 4px 0;
+  border-left: 0;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-group input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.checkbox-group label {
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.btn-group {
+  display: flex;
+  gap: 12px;
+}
+
+.quick-stats {
+  display: flex;
+  gap: 24px;
+  font-size: 13px;
+}
+
+.quick-stat {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.quick-stat-label {
+  color: #999;
+}
+
+.quick-stat-value {
+  font-weight: 600;
+}
+
+.quick-stat-value.success {
+  color: #388e3c;
+}
+.quick-stat-value.info {
+  color: #1976d2;
+}
+.quick-stat-value.danger {
+  color: #d32f2f;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.table-header {
+  padding: 12px 16px;
+  padding-left: 0px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.table-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.table-subtitle {
+  font-size: 13px;
+  color: #999;
+  font-weight: 400;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead {
+  background: #f8f8f8;
+}
+
+th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+th.center {
+  text-align: center;
+}
+
+td {
+  padding: 12px 16px;
+  border-top: 1px solid #f0f0f0;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+td.center {
+  text-align: center;
+}
+
+.progress-col {
+  width: 160px;
+  vertical-align: middle;
+}
+
+tbody tr {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+tbody tr:hover {
+  background: #fafafa;
+}
+
+tbody tr.selected {
+  background: #e3f2fd;
+}
+
+.file-link {
+  color: #333;
+  text-decoration: none;
+  display: block;
+  max-width: 500px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-link:hover {
+  color: #1976d2;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.status-badge.completed {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.status-badge.downloading {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.status-badge.failed {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.status-badge.duplicate {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.status-badge.pending {
+  background: #f5f5f5;
+  color: #757575;
+}
+
+.progress-container {
+  margin-bottom: 0;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 4px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.progress-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 4px;
+  min-width: 0; /* Allows the bar to be zero-width when at 0% */
+}
+
+.progress-fill.completed {
+  background: linear-gradient(to right, #e8f5e9, #4caf50);
+}
+.progress-fill.downloading {
+  background: linear-gradient(to right, #e3f2fd, #2196f3);
+}
+.progress-fill.failed {
+  background: linear-gradient(to right, #ffebee, #f44336);
+}
+.progress-fill.duplicate {
+  background: linear-gradient(to right, #fff3e0, #ff9800);
+}
+
+.progress-info {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: #666;
+  min-height: 36px;
+  position: relative;
+  width: 100%;
+  padding-top: 4px;
+}
+
+.progress-percent {
+  font-family: monospace;
+  font-weight: 600;
+  color: #1976d2;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+
+.progress-text {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  color: #888;
+  line-height: 1.3;
+}
+
+.progress-col {
+  width: 160px;
+}
+
+input[type='checkbox'] {
+  cursor: pointer;
+  accent-color: #1976d2;
+}
+</style>

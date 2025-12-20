@@ -4,8 +4,8 @@ use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::Path;
-use url::Url;
 use tauri::{AppHandle, Emitter};
+use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct ImageInfo {
@@ -137,7 +137,7 @@ pub async fn download_image_with_progress(
     item_id: Option<String>,
 ) -> Result<(String, u64, f64), Box<dyn std::error::Error + Send + Sync>> {
     std::fs::create_dir_all(output_dir)?;
-    
+
     let client = create_client();
     let mut request = client.get(url);
 
@@ -156,7 +156,7 @@ pub async fn download_image_with_progress(
     let mut file = std::fs::File::create(&file_path)?;
     let mut hasher = Sha256::new();
     let mut stream = response.bytes_stream();
-    
+
     let start_time = std::time::Instant::now();
     let mut total_downloaded = 0u64;
     let mut last_update = std::time::Instant::now();
@@ -171,7 +171,11 @@ pub async fn download_image_with_progress(
         if last_update.elapsed().as_millis() > 100 {
             if let (Some(handle), Some(id)) = (&app_handle, &item_id) {
                 let elapsed = start_time.elapsed().as_secs_f64();
-                let speed = if elapsed > 0.0 { total_downloaded as f64 / elapsed } else { 0.0 };
+                let speed = if elapsed > 0.0 {
+                    total_downloaded as f64 / elapsed
+                } else {
+                    0.0
+                };
                 let progress = if total_size > 0 {
                     ((total_downloaded as f64 / total_size as f64) * 100.0) as u8
                 } else {
@@ -196,9 +200,13 @@ pub async fn download_image_with_progress(
             last_update = std::time::Instant::now();
         }
     }
-    
+
     let elapsed = start_time.elapsed().as_secs_f64();
-    let speed = if elapsed > 0.0 { total_downloaded as f64 / elapsed } else { 0.0 };
+    let speed = if elapsed > 0.0 {
+        total_downloaded as f64 / elapsed
+    } else {
+        0.0
+    };
 
     let hash = format!("{:x}", hasher.finalize());
     Ok((hash, total_downloaded, speed))

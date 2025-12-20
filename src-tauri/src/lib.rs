@@ -6,19 +6,10 @@ mod util;
 use download_manager::DownloadManager;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
-use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::Mutex;
 use types::*;
 
 type ManagerState = Arc<Mutex<Option<DownloadManager>>>;
-
-// Define a serializable struct for update information
-#[derive(serde::Serialize)]
-struct UpdateInfo {
-    version: String,
-    date: Option<String>,
-    body: Option<String>,
-}
 
 #[tauri::command]
 async fn start_batch_download(
@@ -89,62 +80,6 @@ async fn get_download_items(manager: State<'_, ManagerState>) -> Result<Vec<Down
 }
 
 #[tauri::command]
-async fn open_file(output_dir: String, filename: String) -> Result<(), String> {
-    let file_path = std::path::Path::new(&output_dir).join(&filename);
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &file_path.to_string_lossy()])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&file_path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&file_path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn open_folder(output_dir: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(&output_dir)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&output_dir)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&output_dir)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
 async fn save_csv(content: String, filename: String) -> Result<String, String> {
     let desktop_dir = dirs::desktop_dir().ok_or("Cannot find desktop directory")?;
     let file_path = desktop_dir.join(filename);
@@ -192,29 +127,6 @@ async fn load_history() -> Result<Vec<DownloadItem>, String> {
     storage::load_download_history()
 }
 
-#[tauri::command]
-async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    match updater.check().await.map_err(|e| e.to_string()) {
-        Ok(Some(update)) => {
-            // Convert Update to UpdateInfo for serialization
-            let update_info = UpdateInfo {
-                version: update.version.clone(),
-                date: update.date.map(|d| d.to_string()),
-                body: update.body.clone(),
-            };
-            Ok(Some(update_info))
-        }
-        Ok(None) => Ok(None),
-        Err(e) => Err(e),
-    }
-}
-
-#[tauri::command]
-async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
-    app.restart();
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -228,14 +140,10 @@ pub fn run() {
             stop_batch_download,
             get_batch_status,
             get_download_items,
-            open_file,
-            open_folder,
             save_csv,
             retry_download,
             save_history,
-            load_history,
-            check_update,
-            install_update
+            load_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

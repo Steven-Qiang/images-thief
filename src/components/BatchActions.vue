@@ -8,10 +8,10 @@
         </label>
 
         <div class="quick-filters">
-          <button class="filter-btn failed" @click="selectByStatus('Failed')">
+          <button class="filter-btn failed" @click="selectByStatus(DownloadStatus.Failed)">
             选择失败项
           </button>
-          <button class="filter-btn completed" @click="selectByStatus('Completed')">
+          <button class="filter-btn completed" @click="selectByStatus(DownloadStatus.Completed)">
             选择完成项
           </button>
         </div>
@@ -33,12 +33,9 @@
 </template>
 
 <script setup lang="ts">
+import type { DownloadItem } from '../types';
 import { computed } from 'vue';
-
-interface DownloadItem {
-  id: string;
-  status: string;
-}
+import { DownloadStatus } from '../utils/downloadStatus';
 
 const props = defineProps<{
   items: DownloadItem[];
@@ -68,7 +65,7 @@ function toggleSelectAll() {
   }
 }
 
-function selectByStatus(status: string) {
+function selectByStatus(status: DownloadStatus) {
   const ids = props.items
     .filter((item) => item.status === status)
     .map((item) => item.id);

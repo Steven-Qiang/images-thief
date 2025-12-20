@@ -15,8 +15,12 @@ pub struct DownloadConfig {
     pub retry_delay: u64,
 }
 
-fn default_max_retries() -> u32 { 3 }
-fn default_retry_delay() -> u64 { 2 }
+fn default_max_retries() -> u32 {
+    3
+}
+fn default_retry_delay() -> u64 {
+    2
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadItem {
