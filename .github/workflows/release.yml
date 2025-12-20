@@ -12,82 +12,57 @@ permissions:
   contents: read
 
 jobs:
-  detect-release:
+  get-next-version:
     permissions:
-      contents: write # to be able to publish releases
-      issues: write # to be able to comment on released issues
-      pull-requests: write # to be able to comment on released pull requests
+      contents: write
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
-    outputs:
-      should-release: ${{ steps.detect.outputs.should-release }}
-      release-version: ${{ steps.detect.outputs.release-version }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
-
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Detect if release is needed (dry-run)
-        id: detect
-        run: |
-          # Dry run to check if a release would be published
-          OUTPUT=$(npx semantic-release --dry-run 2>&1 | tee /tmp/dry-run-output)
-          echo "$OUTPUT"
-
-          # Check if dry-run indicates a release would happen by looking for "Published release"
-          if echo "$OUTPUT" | grep -q "Published release"; then
-            # Extract version from output - typically in format "Published release X.X.X"
-            VERSION=$(echo "$OUTPUT" | grep "Published release" | sed -E 's/.*Published release ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-            if [ ! -z "$VERSION" ]; then
-              echo "should-release=true" >> $GITHUB_OUTPUT
-              echo "release-version=$VERSION" >> $GITHUB_OUTPUT
-              echo "Detected version: $VERSION"
-            else
-              echo "should-release=false" >> $GITHUB_OUTPUT
-              echo "release-version=" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "should-release=false" >> $GITHUB_OUTPUT
-            echo "release-version=" >> $GITHUB_OUTPUT
-          fi
+          cache: pnpm
+      - run: pnpm install
+      - run: npx semantic-release --dry-run
+        id: get-next-version
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      new-release-published: ${{ steps.get-next-version.outputs.new-release-published }}
+      new-release-version: ${{ steps.get-next-version.outputs.new-release-version }}
+      new-release-git-tag: ${{ steps.get-next-version.outputs.new-release-git-tag }}
+      new-release-notes: ${{ steps.get-next-version.outputs.new-release-notes }}
 
   publish-tauri:
-    needs: detect-release
-    if: needs.detect-release.outputs.should-release == 'true'
+    needs: get-next-version
+    if: needs.get-next-version.outputs.new-release-published == 'true'
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin'
-            cache-key: 'macos-aarch64'
-          - platform: 'macos-latest' # for Intel based macs.
-            args: '--target x86_64-apple-darwin'
-            cache-key: 'macos-x86_64'
-          - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            cache-key: macos-aarch64
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            cache-key: macos-x86_64
+          - platform: ubuntu-22.04
             args: ''
-            cache-key: 'ubuntu'
-          - platform: 'windows-latest'
+            cache-key: ubuntu
+          - platform: windows-latest
             args: ''
-            cache-key: 'windows'
+            cache-key: windows
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -102,12 +77,11 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: pnpm
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Cache Rust
@@ -120,7 +94,7 @@ jobs:
           key: ${{ matrix.cache-key }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -129,7 +103,7 @@ jobs:
         run: pnpm install
 
       - name: Sync versions before build
-        run: node scripts/sync-versions.js ${{needs.detect-release.outputs.release-version}}
+        run: node scripts/sync-versions.js ${{needs.get-next-version.outputs.new-release-version}}
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -138,42 +112,37 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
-          releaseName: 'v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
+          releaseName: v__VERSION__
+          releaseBody: ${{needs.get-next-version.outputs.new-release-notes}}
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
 
   release:
-    needs: [detect-release, publish-tauri]
-    if: needs.detect-release.outputs.should-release == 'true'
     runs-on: ubuntu-latest
+    needs: [publish-tauri, get-next-version]
     permissions:
       contents: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
-
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install
-
+          cache: pnpm
+      - run: pnpm install
       - name: Sync versions
-        run: node scripts/sync-versions.js ${{needs.detect-release.outputs.release-version}}
-
-      - name: Run semantic-release
-        run: npx semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/sync-versions.js ${{needs.get-next-version.outputs.new-release-version}}
+      - name: Commit version files
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add src-tauri/tauri.conf.json src-tauri/Cargo.toml package.json
+          git commit -m "chore(release): ${{needs.get-next-version.outputs.new-release-version}} [skip ci]"
+          git push
